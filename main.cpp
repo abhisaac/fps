@@ -8,22 +8,34 @@
 #include <string>
 #include <cmath>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 // Vertex and fragment shader sources
 const char* vertexShaderSrc = R"(
 #version 330 core
 layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aTex;
+out vec2 TexCoord;
 uniform mat4 uMVP;
 void main() {
     gl_Position = uMVP * vec4(aPos, 1.0);
+    TexCoord = aTex;
 }
 )";
 
 const char* fragmentShaderSrc = R"(
 #version 330 core
+in vec2 TexCoord;
 out vec4 FragColor;
 uniform vec3 uColor;
+uniform sampler2D uTex;
+uniform bool useTex;
 void main() {
-    FragColor = vec4(uColor, 1.0);
+    if(useTex)
+        FragColor = texture(uTex, TexCoord);
+    else
+        FragColor = vec4(uColor, 1.0);
 }
 )";
 
@@ -80,10 +92,11 @@ unsigned int cubeIndices[] = {
 
 // Floor quad (XZ plane)
 float floorVertices[] = {
-    -50.0f, 0.0f, -50.0f,
-     50.0f, 0.0f, -50.0f,
-     50.0f, 0.0f,  50.0f,
-    -50.0f, 0.0f,  50.0f
+    // positions         // texcoords
+    -50.0f, 0.0f, -50.0f,  0.0f, 0.0f,
+     50.0f, 0.0f, -50.0f, 10.0f, 0.0f,
+     50.0f, 0.0f,  50.0f, 10.0f,10.0f,
+    -50.0f, 0.0f,  50.0f,  0.0f,10.0f
 };
 unsigned int floorIndices[] = {
     0,1,2, 2,3,0
@@ -185,13 +198,37 @@ void shoot() {
     }
 }
 
-void drawObject(GLuint vao, GLuint shader, int indicesCount, glm::mat4 mvp, glm::vec3 color) {
+GLuint loadTexture(const char* path) {
+    int w, h, ch;
+    unsigned char* data = stbi_load(path, &w, &h, &ch, 0);
+    if (!data) { std::cerr << "Failed to load texture: " << path << std::endl; return 0; }
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, ch == 4 ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    stbi_image_free(data);
+    return tex;
+}
+
+void drawObject(GLuint vao, GLuint shader, int indicesCount, glm::mat4 mvp, glm::vec3 color, GLuint tex = 0) {
     glUseProgram(shader);
     glUniformMatrix4fv(glGetUniformLocation(shader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
     glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, &color[0]);
+    glUniform1i(glGetUniformLocation(shader, "useTex"), tex ? 1 : 0);
+    if (tex) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    }
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, indicesCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+    if (tex) glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 int main() {
@@ -233,8 +270,10 @@ int main() {
     glBufferData(GL_ARRAY_BUFFER, sizeof(floorVertices), floorVertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, floorEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(floorIndices), floorIndices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     // Gun VAO/VBO/EBO (drawn in NDC)
     GLuint gunVAO, gunVBO, gunEBO;
@@ -253,6 +292,8 @@ int main() {
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(window, mouse_callback);
+
+    GLuint floorTexture = loadTexture("floor.jpg"); // Place a floor.jpg in your project folder
 
     enemies.push_back({{0,1, -5}});
     enemies.push_back({{2,1, -8}});
@@ -295,7 +336,7 @@ int main() {
         // Draw floor
         glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 mvp = projection * view * model;
-        drawObject(floorVAO, shader, 6, mvp, glm::vec3(0.3f, 0.7f, 0.3f));
+        drawObject(floorVAO, shader, 6, mvp, glm::vec3(0.3f, 0.7f, 0.3f), floorTexture);
 
         // Draw enemies
         for (auto& e : enemies) {
@@ -311,6 +352,43 @@ int main() {
         glm::mat4 gunProj = glm::mat4(1.0f); // NDC
         glm::mat4 gunMVP = gunProj * gunModel;
         drawObject(gunVAO, shader, 6, gunMVP, glm::vec3(0.2f, 0.2f, 0.2f));
+        glEnable(GL_DEPTH_TEST);
+
+        // Draw a hand with gun (bigger gun quad, offset to lower right)
+        glDisable(GL_DEPTH_TEST);
+        glm::mat4 handModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.3f, -0.3f, 0.0f)) *
+                              glm::scale(glm::mat4(1.0f), glm::vec3(1.8f, 2.0f, 1.0f));
+        glm::mat4 handMVP = handModel; // NDC
+        drawObject(gunVAO, shader, 6, handMVP, glm::vec3(0.4f, 0.3f, 0.2f)); // brownish hand/gun
+        glEnable(GL_DEPTH_TEST);
+
+        // Draw a crosshair in the center of the screen
+        float crosshairVertices[] = {
+            // x, y
+            -0.01f,  0.0f, 0.0f,
+             0.01f,  0.0f, 0.0f,
+             0.0f, -0.01f, 0.0f,
+             0.0f,  0.01f, 0.0f
+        };
+        GLuint crossVAO, crossVBO;
+        glGenVertexArrays(1, &crossVAO);
+        glGenBuffers(1, &crossVBO);
+        glBindVertexArray(crossVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, crossVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(crosshairVertices), crosshairVertices, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        glBindVertexArray(0);
+
+        // In main loop, after drawing hand/gun:
+        glUseProgram(shader);
+        glUniformMatrix4fv(glGetUniformLocation(shader, "uMVP"), 1, GL_FALSE, &glm::mat4(1.0f)[0][0]);
+        glUniform3fv(glGetUniformLocation(shader, "uColor"), 1, &glm::vec3(1,1,1)[0]);
+        glUniform1i(glGetUniformLocation(shader, "useTex"), 0);
+        glBindVertexArray(crossVAO);
+        glDrawArrays(GL_LINES, 0, 2);
+        glDrawArrays(GL_LINES, 2, 2);
+        glBindVertexArray(0);
         glEnable(GL_DEPTH_TEST);
 
         glfwSwapBuffers(window);
