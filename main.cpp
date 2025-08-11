@@ -74,23 +74,41 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 float camYVelocity = 0.0f;
 bool isJumping = false;
-
-// Cube vertex data (centered at origin, size 1)
 float cubeVertices[] = {
-    // positions
+    //  x      y      z      u     v
     // Front face
-    -0.5f,-0.5f, 0.5f,  0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, 0.5f,
+    -0.5f,-0.5f, 0.5f,  0.0f, 0.0f,
+     0.5f,-0.5f, 0.5f,  1.0f, 0.0f,
+     0.5f, 0.5f, 0.5f,  1.0f, 1.0f,
+    -0.5f, 0.5f, 0.5f,  0.0f, 1.0f,
     // Back face
-    -0.5f,-0.5f,-0.5f, -0.5f, 0.5f,-0.5f,  0.5f, 0.5f,-0.5f,   0.5f,-0.5f,-0.5f,
+    -0.5f,-0.5f,-0.5f,  1.0f, 0.0f,
+    -0.5f, 0.5f,-0.5f,  1.0f, 1.0f,
+     0.5f, 0.5f,-0.5f,  0.0f, 1.0f,
+     0.5f,-0.5f,-0.5f,  0.0f, 0.0f,
     // Left face
-    -0.5f,-0.5f,-0.5f, -0.5f,-0.5f, 0.5f, -0.5f, 0.5f, 0.5f,  -0.5f, 0.5f,-0.5f,
+    -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,
+    -0.5f,-0.5f, 0.5f,  1.0f, 0.0f,
+    -0.5f, 0.5f, 0.5f,  1.0f, 1.0f,
+    -0.5f, 0.5f,-0.5f,  0.0f, 1.0f,
     // Right face
-     0.5f,-0.5f,-0.5f,  0.5f, 0.5f,-0.5f,  0.5f, 0.5f, 0.5f,   0.5f,-0.5f, 0.5f,
+     0.5f,-0.5f,-0.5f,  1.0f, 0.0f,
+     0.5f, 0.5f,-0.5f,  1.0f, 1.0f,
+     0.5f, 0.5f, 0.5f,  0.0f, 1.0f,
+     0.5f,-0.5f, 0.5f,  0.0f, 0.0f,
     // Top face
-    -0.5f, 0.5f,-0.5f, -0.5f, 0.5f, 0.5f,  0.5f, 0.5f, 0.5f,   0.5f, 0.5f,-0.5f,
+    -0.5f, 0.5f,-0.5f,  0.0f, 1.0f,
+    -0.5f, 0.5f, 0.5f,  0.0f, 0.0f,
+     0.5f, 0.5f, 0.5f,  1.0f, 0.0f,
+     0.5f, 0.5f,-0.5f,  1.0f, 1.0f,
     // Bottom face
-    -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,  0.5f,-0.5f, 0.5f,  -0.5f,-0.5f, 0.5f
+    -0.5f,-0.5f,-0.5f,  1.0f, 1.0f,
+     0.5f,-0.5f,-0.5f,  0.0f, 1.0f,
+     0.5f,-0.5f, 0.5f,  0.0f, 0.0f,
+    -0.5f,-0.5f, 0.5f,  1.0f, 0.0f
 };
+// 24 vertices, 5 floats each (position + texcoord)
+
 unsigned int cubeIndices[] = {
     0,1,2, 2,3,0,      // Front
     4,5,6, 6,7,4,      // Back
@@ -136,7 +154,7 @@ void generateMaze() {
         std::shuffle(dirs.begin(), dirs.end(), rng);
         for (auto [dx,dy] : dirs) {
             int nx = x+dx, ny = y+dy;
-            std::cout << nx << "," << ny << " -> ";
+            // std::cout << nx << "," << ny << " -> ";
             if (nx>0 && nx<MAZE_W-1 && ny>0 && ny<MAZE_H-1 && maze[ny][nx]==1) {
                 maze[y+dy/2][x+dx/2]=0; // Remove wall between
                 carve(nx,ny);
@@ -144,7 +162,7 @@ void generateMaze() {
         }
     };
     carve(3,3);
-    std::cout << "Maze generated\n";
+    // std::cout << "Maze generated\n";
 }
 
 // --- Place walls as cubes in the scene ---
@@ -152,8 +170,8 @@ void buildWalls() {
     wallPositions.clear();
     for(int y=0;y<MAZE_H;++y) for(int x=0;x<MAZE_W;++x)
         if(maze[y][x]==1)
-            wallPositions.push_back(glm::vec3(x-7,0.2f,y-7));
-    std::cout << "2" << std::endl;
+            wallPositions.push_back(glm::vec3(x*1.5f-10.5f, 1.0f, y*1.5f-10.5f)); // y=1.0f for center of tall wall
+//     std::cout << "2" << std::endl;
 }
 
 // --- Place enemies in open cells ---
@@ -173,9 +191,10 @@ void spawnEnemies() {
         int x = emptyCells[i].first;
         int y = emptyCells[i].second;
         float vx = (rng() % 2 - 0.5f) * 2.0f, vz = (rng() % 2 - 0.5f) * 2.0f;
-        enemies.push_back({Vec3{float(x - 7), 1, float(y - 7)}, true, glm::vec3(vx, 0, vz)});
+        // enemies.push_back({Vec3{float((x - 7)*1.5f), 1, float((y - 7)*1.5f)}, true, glm::vec3(vx, 0, vz)});
+        enemies.push_back({Vec3{float(x), 1, float(y)}, true, glm::vec3(vx, 0, vz)});
     }
-    std::cout << "3" << std::endl;
+    // std::cout << "3" << std::endl;
 }
 
 GLuint compileShader(GLenum type, const char* src) {
@@ -236,9 +255,10 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 void process_input(GLFWwindow* window) {
     float speed = 5.0f * deltaTime;
     glm::vec3 nextPos = camPos;
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) nextPos += camFront * speed;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) nextPos -= camFront * speed;
-    glm::vec3 right = glm::normalize(glm::cross(camFront, camUp));
+    glm::vec3 flatFront = glm::normalize(glm::vec3(camFront.x, 0, camFront.z)); // Ignore Y for movement
+    glm::vec3 right = glm::normalize(glm::cross(flatFront, camUp));
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) nextPos += flatFront * speed;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) nextPos -= flatFront * speed;
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) nextPos -= right * speed;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) nextPos += right * speed;
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(window, true);
@@ -247,7 +267,7 @@ void process_input(GLFWwindow* window) {
     if (nextPos.y < 1.6f) nextPos.y = 1.6f;
 
     // Maze collision (simple AABB vs wall cubes)
-    int px = int(std::round(nextPos.x+7)), pz = int(std::round(nextPos.z+7));
+    int px = int(std::round(nextPos.x/1.5f+7)), pz = int(std::round(nextPos.z/1.5f+7));
     if (px>=0 && px<MAZE_W && pz>=0 && pz<MAZE_H && maze[pz][px]==0)
         camPos = nextPos;
 
@@ -256,7 +276,6 @@ void process_input(GLFWwindow* window) {
         isJumping = true;
     }
 }
-
 // --- Ray-box intersection for shooting ---
 bool rayIntersectsAABB(
     const glm::vec3& rayOrigin,
@@ -358,9 +377,9 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Simple FPS Maze", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1200, 800, "Simple FPS Maze", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
-    glfwSetWindowPos(window, 100, 600);
+    glfwSetWindowPos(window, 800, 800);
 
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
@@ -381,8 +400,10 @@ int main() {
     glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cubeEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0); // position
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))); // texcoord
+    glEnableVertexAttribArray(1);
 
     // Floor VAO/VBO/EBO
     GLuint floorVAO, floorVBO, floorEBO;
@@ -417,8 +438,8 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(window, mouse_callback);
 
-    GLuint floorTexture = loadTexture("floor.jpg"); // Place a floor.jpg in your project folder
-
+    GLuint floorTexture = loadTexture("C:\\src\\test_fps\\build\\Debug\\floor.jpg"); // Place a floor.jpg in your project folder
+GLuint wallTexture = loadTexture("C:\\src\\test_fps\\build\\Debug\\wall.jpg"); 
     // // --- Maze and enemy setup ---
     generateMaze();
     for (int y = 0; y < MAZE_H; ++y) {
@@ -430,7 +451,7 @@ int main() {
     std::cout << "Walls: " << wallPositions.size() << std::endl;
     spawnEnemies();
     std::cout << "Enemies: " << enemies.size() << std::endl;
-    camPos = glm::vec3(-6, 1.6f, -6);
+    camPos = glm::vec3((1-7)*1.5f, 1.6f, (1-7)*1.5f); // Start at maze entrance
 
     // Crosshair setup (static, only create once)
     float crosshairVertices[] = {
@@ -484,21 +505,20 @@ int main() {
         }
         prevMousePressed = mousePressed;
 
-        // Enemy movement and bounce
         for (auto& e : enemies) {
             if (!e.alive) continue;
+            // Move in grid coordinates
             glm::vec3 next = glm::vec3(e.pos.x, e.pos.y, e.pos.z) + e.velocity * deltaTime;
-            int ex = int(std::round(next.x+7)), ez = int(std::round(next.z+7));
-            if (ex>=0 && ex<MAZE_W && ez>=0 && ez<MAZE_H && maze[ez][ex]==0) {
+            int ex = int(std::round(next.x)), ez = int(std::round(next.z));
+            if (ex >= 0 && ex < MAZE_W && ez >= 0 && ez < MAZE_H && maze[ez][ex] == 0) {
                 e.pos.x = next.x;
                 e.pos.z = next.z;
             } else {
-                // Bounce
+                // Bounce and randomize direction a bit
                 e.velocity.x = -e.velocity.x + ((rand()%100)/100.0f-0.5f)*0.5f;
                 e.velocity.z = -e.velocity.z + ((rand()%100)/100.0f-0.5f)*0.5f;
             }
         }
-
         glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -516,16 +536,18 @@ int main() {
 
         // Draw maze walls
         for (auto& pos : wallPositions) {
-            model = glm::translate(glm::mat4(1.0f), pos);
-            mvp = projection * view * model;
-            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(0.5f,0.5f,0.5f));
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), pos) *
+                              glm::scale(glm::mat4(1.0f), glm::vec3(1.5f, 2.0f, 1.5f)); // 2.0f = taller, 1.5f = wider path
+            glm::mat4 mvp = projection * view * model;
+            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(0.5f,0.5f,0.5f), wallTexture);
         }
 
         // Draw enemies
         for (auto& e : enemies) {
             if (!e.alive) continue;
-            model = glm::translate(glm::mat4(1.0f), glm::vec3(e.pos.x, e.pos.y, e.pos.z));
-            mvp = projection * view * model;
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f)) *
+                            glm::scale(glm::mat4(1.0f), glm::vec3(0.175f, 0.125f, 0.175f)); // 4x smaller
+            glm::mat4 mvp = projection * view * model;
             drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,0,0));
         }
 
