@@ -438,8 +438,9 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetCursorPosCallback(window, mouse_callback);
 
-    GLuint floorTexture = loadTexture("C:\\src\\test_fps\\build\\Debug\\floor.jpg"); // Place a floor.jpg in your project folder
-GLuint wallTexture = loadTexture("C:\\src\\test_fps\\build\\Debug\\wall.jpg"); 
+    GLuint floorTexture = loadTexture("assets/floor.jpg");
+    GLuint wallTexture = loadTexture("assets/wall.jpg"); 
+    
     // // --- Maze and enemy setup ---
     generateMaze();
     for (int y = 0; y < MAZE_H; ++y) {
