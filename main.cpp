@@ -182,22 +182,66 @@ void process_input(GLFWwindow* window) {
     }
 
 }
+bool rayIntersectsAABB(
+    const glm::vec3& rayOrigin,
+    const glm::vec3& rayDir,
+    const glm::vec3& boxCenter,
+    float boxHalfSize,
+    float& tHit)
+{
+    glm::vec3 minB = boxCenter - glm::vec3(boxHalfSize);
+    glm::vec3 maxB = boxCenter + glm::vec3(boxHalfSize);
+    float tmin = (minB.x - rayOrigin.x) / rayDir.x;
+    float tmax = (maxB.x - rayOrigin.x) / rayDir.x;
+    if (tmin > tmax) std::swap(tmin, tmax);
 
-void shoot() {
-    for (auto& e : enemies) {
-        if (!e.alive) continue;
-        glm::vec3 toEnemy = glm::vec3(e.pos.x, e.pos.y, e.pos.z) - camPos;
-        float dist = glm::length(toEnemy);
-        glm::vec3 dirNorm = glm::normalize(toEnemy);
-        float dot = glm::dot(dirNorm, camFront);
-        if (dot > 0.98f && dist < 10.0f) {
-            e.alive = false;
-            std::cout << "Enemy hit!\n";
-            break;
-        }
-    }
+    float tymin = (minB.y - rayOrigin.y) / rayDir.y;
+    float tymax = (maxB.y - rayOrigin.y) / rayDir.y;
+    if (tymin > tymax) std::swap(tymin, tymax);
+
+    if ((tmin > tymax) || (tymin > tmax))
+        return false;
+
+    if (tymin > tmin) tmin = tymin;
+    if (tymax < tmax) tmax = tymax;
+
+    float tzmin = (minB.z - rayOrigin.z) / rayDir.z;
+    float tzmax = (maxB.z - rayOrigin.z) / rayDir.z;
+    if (tzmin > tzmax) std::swap(tzmin, tzmax);
+
+    if ((tmin > tzmax) || (tzmin > tmax))
+        return false;
+
+    if (tzmin > tmin) tmin = tzmin;
+    if (tzmax < tmax) tmax = tzmax;
+
+    tHit = tmin;
+    return tmax > 0;
 }
 
+// Replace your shoot() function with this:
+void shoot() {
+    float closestT = 1e9f;
+    Enemy* hitEnemy = nullptr;
+    glm::vec3 rayOrigin = camPos;
+    glm::vec3 rayDir = glm::normalize(camFront);
+
+    for (auto& e : enemies) {
+        if (!e.alive) continue;
+        float tHit;
+        // Assuming cube size 1.0, so half size is 0.5
+        if (rayIntersectsAABB(rayOrigin, rayDir, glm::vec3(e.pos.x, e.pos.y, e.pos.z), 0.5f, tHit)) {
+            if (tHit > 0.0f && tHit < closestT && tHit < 100.0f) { // 100.0f = max shooting distance
+                closestT = tHit;
+                hitEnemy = &e;
+            }
+        }
+    }
+    if (hitEnemy) {
+        hitEnemy->alive = false;
+        std::cout << "Enemy hit!\n";
+    }
+}
 GLuint loadTexture(const char* path) {
     int w, h, ch;
     unsigned char* data = stbi_load(path, &w, &h, &ch, 0);
@@ -230,7 +274,7 @@ void drawObject(GLuint vao, GLuint shader, int indicesCount, glm::mat4 mvp, glm:
     glBindVertexArray(0);
     if (tex) glBindTexture(GL_TEXTURE_2D, 0);
 }
-
+bool prevMousePressed = false;
 int main() {
     if (!glfwInit()) return -1;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -319,9 +363,12 @@ int main() {
             }
         }
 
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        bool mousePressed = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (mousePressed && !prevMousePressed) {
+            // std::cout << "Mouse clicked, shooting...\n";
             shoot();
         }
+        prevMousePressed = mousePressed;
 
         glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -346,18 +393,18 @@ int main() {
             drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,0,0));
         }
 
-        // Draw gun (in NDC, after disabling depth)
-        glDisable(GL_DEPTH_TEST);
-        glm::mat4 gunModel = glm::mat4(1.0f);
-        glm::mat4 gunProj = glm::mat4(1.0f); // NDC
-        glm::mat4 gunMVP = gunProj * gunModel;
-        drawObject(gunVAO, shader, 6, gunMVP, glm::vec3(0.2f, 0.2f, 0.2f));
-        glEnable(GL_DEPTH_TEST);
+        // // Draw gun (in NDC, after disabling depth)
+        // glDisable(GL_DEPTH_TEST);
+        // glm::mat4 gunModel = glm::mat4(1.0f);
+        // glm::mat4 gunProj = glm::mat4(1.0f); // NDC
+        // glm::mat4 gunMVP = gunProj * gunModel;
+        // drawObject(gunVAO, shader, 6, gunMVP, glm::vec3(0.2f, 0.2f, 0.2f));
+        // glEnable(GL_DEPTH_TEST);
 
         // Draw a hand with gun (bigger gun quad, offset to lower right)
         glDisable(GL_DEPTH_TEST);
         glm::mat4 handModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.3f, -0.3f, 0.0f)) *
-                              glm::scale(glm::mat4(1.0f), glm::vec3(1.8f, 2.0f, 1.0f));
+                              glm::scale(glm::mat4(1.0f), glm::vec3(2.8f, 2.0f, 1.0f));
         glm::mat4 handMVP = handModel; // NDC
         drawObject(gunVAO, shader, 6, handMVP, glm::vec3(0.4f, 0.3f, 0.2f)); // brownish hand/gun
         glEnable(GL_DEPTH_TEST);
