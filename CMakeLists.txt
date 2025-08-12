@@ -18,11 +18,20 @@ link_directories(
 )
 
 add_executable(SimpleFPS main.cpp)
+target_link_libraries(SimpleFPS PRIVATE glfw3 glew32s opengl32)
 
-target_link_libraries(SimpleFPS
-    OpenGL::GL
-    glfw3
-    glew32s
-    opengl32
-    glu32
+
+add_executable(test test.cpp)
+target_link_libraries(test PRIVATE glfw3 glew32s opengl32)
+# target_compile_definitions(test PRIVATE GLEW_STATIC)
+# target_include_directories(test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} C:/src/third_party/glfw/include
+#     C:/src/third_party/glew/include
+#     C:/src/third_party/glm)
+
+
+add_custom_command(
+    TARGET SimpleFPS POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets
+            $<TARGET_FILE_DIR:SimpleFPS>/assets
 )

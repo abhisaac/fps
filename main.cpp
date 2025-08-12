@@ -12,8 +12,16 @@
 #include <functional>
 #include <cstring>
 
+// sound
+#define NOMINMAX
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
+
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "stb_easy_font.h"
 
 // Vertex and fragment shader sources
 const char* vertexShaderSrc = R"(
@@ -40,6 +48,27 @@ void main() {
         FragColor = texture(uTex, TexCoord);
     else
         FragColor = vec4(uColor, 1.0);
+}
+)";
+const char* textVertexShaderSrc = R"(
+#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec3 aColor;
+out vec3 vColor;
+uniform vec2 uOffset;
+uniform float uScale;
+void main() {
+    gl_Position = vec4((aPos * uScale) + uOffset, 0.0, 1.0);
+    vColor = aColor;
+}
+)";
+
+const char* textFragmentShaderSrc = R"(
+#version 330 core
+in vec3 vColor;
+out vec4 FragColor;
+void main() {
+    FragColor = vec4(vColor, 1.0);
 }
 )";
 
@@ -223,6 +252,18 @@ GLuint createShaderProgram() {
     return prog;
 }
 
+GLuint createTextShaderProgram() {
+    GLuint vs = compileShader(GL_VERTEX_SHADER, textVertexShaderSrc);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, textFragmentShaderSrc);
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return prog;
+}
+
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (firstMouse) {
         lastX = (float)xpos;
@@ -316,6 +357,7 @@ bool rayIntersectsAABB(
 
 // --- Shooting using raytracing ---
 void shoot() {
+    PlaySound(TEXT("assets/shoot.wav"), NULL, SND_ASYNC | SND_FILENAME);
     float closestT = 1e9f;
     Enemy* hitEnemy = nullptr;
     glm::vec3 rayOrigin = camPos;
@@ -324,8 +366,13 @@ void shoot() {
     for (auto& e : enemies) {
         if (!e.alive) continue;
         float tHit;
-        if (rayIntersectsAABB(rayOrigin, rayDir, glm::vec3(e.pos.x, e.pos.y, e.pos.z), 0.5f, tHit)) {
-            if (tHit > 0.0f && tHit < closestT && tHit < 100.0f) {
+        // Use world coordinates for the enemy's box center
+glm::vec3 enemyWorldPos = glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f);
+if (rayIntersectsAABB(rayOrigin, rayDir, enemyWorldPos, 0.175f, tHit)) // 0.175f matches enemy's half-size
+
+       {
+
+           if (tHit > 0.0f && tHit < closestT && tHit < 100.0f) {
                 closestT = tHit;
                 hitEnemy = &e;
             }
@@ -369,8 +416,45 @@ void drawObject(GLuint vao, GLuint shader, int indicesCount, glm::mat4 mvp, glm:
     glBindVertexArray(0);
     if (tex) glBindTexture(GL_TEXTURE_2D, 0);
 }
+void drawTextShader(GLuint textShader, const char* text, float x, float y, float scale = 1.0f, glm::vec3 color = glm::vec3(1,1,0)) {
+    char buffer[99999];
+    int num_quads = stb_easy_font_print(0, 0, (char*)text, NULL, buffer, sizeof(buffer));
+    std::vector<float> vertices;
+    for (int i = 0; i < num_quads * 4; ++i) {
+        float* v = (float*)(&buffer[i * 16]);
+        vertices.push_back(v[0]);
+        vertices.push_back(v[1]);
+        vertices.push_back(color.r);
+        vertices.push_back(color.g);
+        vertices.push_back(color.b);
+    }
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
+    glUseProgram(textShader);
+    glUniform2f(glGetUniformLocation(textShader, "uOffset"), x, y);
+    glUniform1f(glGetUniformLocation(textShader, "uScale"), scale);
+
+    glDrawArrays(GL_QUADS, 0, num_quads * 4);
+
+    glBindVertexArray(0);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+}
+
+// Global state
+bool gameOver = false;
 bool prevMousePressed = false;
+bool anyAlive = false;
+
 
 int main() {
     if (!glfwInit()) return -1;
@@ -389,6 +473,8 @@ int main() {
 
     // Compile shaders
     GLuint shader = createShaderProgram();
+
+    GLuint textShader = createTextShaderProgram();
 
     // Cube VAO/VBO/EBO
     GLuint cubeVAO, cubeVBO, cubeEBO;
@@ -440,6 +526,9 @@ int main() {
 
     GLuint floorTexture = loadTexture("assets/floor.jpg");
     GLuint wallTexture = loadTexture("assets/wall.jpg"); 
+    GLuint enemyTexture = loadTexture("assets/enemy.jpg"); 
+
+    GLuint skyTexture = loadTexture("assets/sky.jpg");
     
     // // --- Maze and enemy setup ---
     generateMaze();
@@ -478,6 +567,30 @@ int main() {
 // }
 
     while (!glfwWindowShouldClose(window)) {
+
+        if (gameOver) {
+            glClearColor(0.1f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            int width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+            const char* msg = "GAME OVER";
+            int textPixelWidth = stb_easy_font_width((char*)msg);
+            int textPixelHeight = stb_easy_font_height((char*)msg);
+            float scale = 2.0f / height * 32.0f;
+            float x = -((float)textPixelWidth * scale) / 2.0f;
+            float y = -((float)textPixelHeight * scale) / 2.0f;
+            drawTextShader(textShader, msg, x, y, scale, glm::vec3(1,0,0));
+            glfwSwapBuffers(window);
+            if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+                gameOver = false;
+                camPos = glm::vec3((1-7)*1.5f, 1.6f, (1-7)*1.5f);
+                camYVelocity = 0.0f;
+                isJumping = false;
+                spawnEnemies();
+            }
+            glfwPollEvents();
+            continue;
+        }
         float currentFrame = (float)glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
@@ -505,9 +618,10 @@ int main() {
             shoot();
         }
         prevMousePressed = mousePressed;
-
+        
         for (auto& e : enemies) {
             if (!e.alive) continue;
+            anyAlive = true;
             // Move in grid coordinates
             glm::vec3 next = glm::vec3(e.pos.x, e.pos.y, e.pos.z) + e.velocity * deltaTime;
             int ex = int(std::round(next.x)), ez = int(std::round(next.z));
@@ -516,13 +630,21 @@ int main() {
                 e.pos.z = next.z;
             } else {
                 // Bounce and randomize direction a bit
-                e.velocity.x = -e.velocity.x + ((rand()%100)/100.0f-0.5f)*0.5f;
-                e.velocity.z = -e.velocity.z + ((rand()%100)/100.0f-0.5f)*0.5f;
+                e.velocity.x = -e.velocity.x + ((rand()%100)/100.0f-0.5f)*0.25f;
+                e.velocity.z = -e.velocity.z + ((rand()%100)/100.0f-0.5f)*0.25f;
+            }
+
+            // Check collision with player
+            glm::vec3 enemyWorld = glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f);
+            float dist = glm::distance(glm::vec3(camPos.x, 1.0f, camPos.z), glm::vec3(enemyWorld.x, 1.0f, enemyWorld.z));
+            if (dist < 0.4f) { // Adjust threshold as needed
+                gameOver = true;
             }
         }
+        anyAlive = false;
         glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+        
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         float aspect = (float)width / (float)height;
@@ -535,6 +657,24 @@ int main() {
         glm::mat4 mvp = projection * view * model;
         drawObject(floorVAO, shader, 6, mvp, glm::vec3(0.3f, 0.7f, 0.3f), floorTexture);
 
+        glEnable(GL_DEPTH_TEST);
+        // if (!anyAlive) {
+        //     const char* msg = "YOU WON!";
+        //     int textPixelWidth = stb_easy_font_width((char*)msg);
+        //     int textPixelHeight = stb_easy_font_height((char*)msg);
+
+        //     // Calculate scale so text height is about 1/8 of window height
+        //     float scale = 2.0f / height * 32.0f; // 32 is a good font size for 800px window
+
+        //     // Center in NDC
+        //     float x = -((float)textPixelWidth * scale) / 2.0f;
+        //     float y = -((float)textPixelHeight * scale) / 2.0f;
+
+        //     drawTextShader(textShader, msg, x, y, scale, glm::vec3(1,1,0));
+        //     glfwSwapBuffers(window);
+        //     glfwPollEvents();
+        //     continue;
+        // }
         // Draw maze walls
         for (auto& pos : wallPositions) {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), pos) *
@@ -547,9 +687,9 @@ int main() {
         for (auto& e : enemies) {
             if (!e.alive) continue;
             glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f)) *
-                            glm::scale(glm::mat4(1.0f), glm::vec3(0.175f, 0.125f, 0.175f)); // 4x smaller
+                            glm::scale(glm::mat4(1.0f), glm::vec3(0.35f, 0.35f, 0.35f)); // 4x smaller
             glm::mat4 mvp = projection * view * model;
-            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,0,0));
+            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,0,0), enemyTexture);
         }
 
         // Draw a hand with gun (bigger gun quad, offset to lower right)
@@ -569,6 +709,23 @@ int main() {
         glDrawArrays(GL_LINES, 0, 2);
         glDrawArrays(GL_LINES, 2, 2);
         glBindVertexArray(0);
+
+        // Disable depth writing so sky is always in the background
+glDepthMask(GL_FALSE);
+
+// Center skybox at camera, scale large (e.g., 50 units)
+glm::mat4 skyModel = glm::translate(glm::mat4(1.0f), camPos) *
+                     glm::scale(glm::mat4(1.0f), glm::vec3(50.0f));
+
+// Remove translation from view matrix so skybox doesn't move with camera position
+glm::mat4 skyView = glm::mat4(glm::mat3(view));
+glm::mat4 skyMVP = projection * skyView * skyModel;
+glCullFace(GL_FRONT);
+// Draw with sky texture (use your cube VAO)
+drawObject(cubeVAO, shader, 36, skyMVP, glm::vec3(1.0f), skyTexture);
+glCullFace(GL_BACK);
+// Re-enable depth writing
+glDepthMask(GL_TRUE);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
