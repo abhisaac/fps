@@ -14,8 +14,10 @@
 
 // sound
 #define NOMINMAX
+#ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
+#endif
 #pragma comment(lib, "winmm.lib")
 
 
@@ -357,7 +359,12 @@ bool rayIntersectsAABB(
 
 // --- Shooting using raytracing ---
 void shoot() {
+    // PlaySound(TEXT("assets/shoot.wav"), NULL, SND_ASYNC | SND_FILENAME);
+    #ifdef _WIN32
     PlaySound(TEXT("assets/shoot.wav"), NULL, SND_ASYNC | SND_FILENAME);
+#elif defined(__APPLE__)
+    system("afplay assets/shoot.wav &");
+#endif
     float closestT = 1e9f;
     Enemy* hitEnemy = nullptr;
     glm::vec3 rayOrigin = camPos;
@@ -458,12 +465,16 @@ bool anyAlive = false;
 
 int main() {
     if (!glfwInit()) return -1;
+    // Request OpenGL 3.3 Core profile
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
     GLFWwindow* window = glfwCreateWindow(1200, 800, "Simple FPS Maze", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
-    glfwSetWindowPos(window, 800, 800);
+    // glfwSetWindowPos(window, 800, 800);
 
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
