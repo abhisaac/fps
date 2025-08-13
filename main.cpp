@@ -11,6 +11,7 @@
 #include <ctime>
 #include <functional>
 #include <cstring>
+#include <algorithm>
 
 // sound
 #define NOMINMAX
@@ -364,6 +365,8 @@ void shoot() {
     PlaySound(TEXT("assets/shoot.wav"), NULL, SND_ASYNC | SND_FILENAME);
 #elif defined(__APPLE__)
     system("afplay assets/shoot.wav &");
+#else
+    system("aplay assets/shoot.wav &");
 #endif
     float closestT = 1e9f;
     Enemy* hitEnemy = nullptr;
