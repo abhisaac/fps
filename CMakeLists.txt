@@ -3,7 +3,7 @@ project(SimpleFPS)
 
 set(CMAKE_CXX_STANDARD 20)
 
-find_package(OpenGL REQUIRED)
+# find_package(OpenGL REQUIRED)
 
 if(WIN32)
     set(LIBS opengl32 glew32s glfw3)
@@ -11,7 +11,7 @@ if(WIN32)
 elseif(APPLE)
     set(LIBS glew glfw "-framework OpenGL")
 else()
-    set(LIBS glew glfw GL)
+    set(LIBS GLEW glfw GL)
     
 endif()
 
