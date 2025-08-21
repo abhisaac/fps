@@ -1,3 +1,7 @@
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+
 #define GLEW_STATIC
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -86,6 +90,8 @@ struct Enemy {
     Vec3 pos;
     bool alive = true;
     glm::vec3 velocity = glm::vec3(0);
+    bool smashing = false;
+    float smashTime = 0.0f;
 };
 
 // Maze parameters
@@ -105,6 +111,25 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 float camYVelocity = 0.0f;
 bool isJumping = false;
+
+struct Bullet {
+    glm::vec3 pos;
+    glm::vec3 dir;
+    float speed;
+    bool alive = true;
+};
+std::vector<Bullet> bullets;
+
+struct GameParameters {
+    float playerSpeed = 5.0f;
+    float jumpStrength = 6.0f;
+    float enemySpeed = 2.0f;
+    float bulletSpeed = 18.0f;
+    glm::vec3 enemyColor = glm::vec3(1,0,0);
+    float wallHeight = 2.0f;
+    bool showDebug = true;
+} params;
+
 float cubeVertices[] = {
     //  x      y      z      u     v
     // Front face
@@ -266,6 +291,7 @@ GLuint createTextShaderProgram() {
     return prog;
 }
 
+
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (firstMouse) {
         lastX = (float)xpos;
@@ -313,11 +339,21 @@ void process_input(GLFWwindow* window) {
     int px = int(std::round(nextPos.x/1.5f+7)), pz = int(std::round(nextPos.z/1.5f+7));
     if (px>=0 && px<MAZE_W && pz>=0 && pz<MAZE_H && maze[pz][px]==0)
         camPos = nextPos;
+    
 
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !isJumping) {
         camYVelocity = 6.0f; // jump strength
         isJumping = true;
     }
+
+    if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS) {
+    static double lastToggle = 0.0;
+    double now = glfwGetTime();
+    if (now - lastToggle > 0.3) {  // Debounce
+        params.showDebug = !params.showDebug;
+        lastToggle = now;
+    }
+}
 }
 // --- Ray-box intersection for shooting ---
 bool rayIntersectsAABB(
@@ -365,6 +401,15 @@ void shoot() {
 #elif defined(__APPLE__)
     system("afplay assets/shoot.wav &");
 #endif
+
+ // Spawn a bullet at camera position, in camera direction
+    Bullet b;
+    b.pos = camPos + glm::vec3(0, -0.1f, 0); // Slightly below eye
+    b.dir = glm::normalize(camFront);
+    b.speed = 18.0f;
+    b.alive = true;
+    bullets.push_back(b);
+
     float closestT = 1e9f;
     Enemy* hitEnemy = nullptr;
     glm::vec3 rayOrigin = camPos;
@@ -426,36 +471,83 @@ void drawObject(GLuint vao, GLuint shader, int indicesCount, glm::mat4 mvp, glm:
 void drawTextShader(GLuint textShader, const char* text, float x, float y, float scale = 1.0f, glm::vec3 color = glm::vec3(1,1,0)) {
     char buffer[99999];
     int num_quads = stb_easy_font_print(0, 0, (char*)text, NULL, buffer, sizeof(buffer));
+    
     std::vector<float> vertices;
-    for (int i = 0; i < num_quads * 4; ++i) {
-        float* v = (float*)(&buffer[i * 16]);
-        vertices.push_back(v[0]);
-        vertices.push_back(v[1]);
-        vertices.push_back(color.r);
-        vertices.push_back(color.g);
-        vertices.push_back(color.b);
+    for (int i = 0; i < num_quads; ++i) {
+        // Get the 4 vertices of this quad
+        float* quad = (float*)(&buffer[i * 16]);
+        
+        // First triangle of quad (0,1,2)
+        vertices.push_back(quad[0]); vertices.push_back(quad[1]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
+        
+        vertices.push_back(quad[2]); vertices.push_back(quad[3]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
+        
+        vertices.push_back(quad[4]); vertices.push_back(quad[5]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
+        
+        // Second triangle of quad (2,3,0)
+        vertices.push_back(quad[4]); vertices.push_back(quad[5]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
+        
+        vertices.push_back(quad[6]); vertices.push_back(quad[7]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
+        
+        vertices.push_back(quad[0]); vertices.push_back(quad[1]); // pos
+        vertices.push_back(color.r); vertices.push_back(color.g); vertices.push_back(color.b);
     }
+
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
+    
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    
+    // Position attribute (2 floats)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    
+    // Color attribute (3 floats)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
+    
     glUseProgram(textShader);
     glUniform2f(glGetUniformLocation(textShader, "uOffset"), x, y);
     glUniform1f(glGetUniformLocation(textShader, "uScale"), scale);
-
-    glDrawArrays(GL_QUADS, 0, num_quads * 4);
-
+    
+    // Draw as triangles, 6 vertices per quad
+    glDrawArrays(GL_TRIANGLES, 0, num_quads * 6);
+    
     glBindVertexArray(0);
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
 }
+
+// // glDrawArrays(GL_TRIANGLES, 0, num_quads * 6);
+//     GLuint vao, vbo;
+//     glGenVertexArrays(1, &vao);
+//     glGenBuffers(1, &vbo);
+//     glBindVertexArray(vao);
+//     glBindBuffer(GL_ARRAY_BUFFER, vbo);
+//     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
+//     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+//     glEnableVertexAttribArray(0);
+//     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+//     glEnableVertexAttribArray(1);
+
+//     glUseProgram(textShader);
+//     glUniform2f(glGetUniformLocation(textShader, "uOffset"), x, y);
+//     glUniform1f(glGetUniformLocation(textShader, "uScale"), scale);
+
+//     glDrawArrays(GL_QUADS, 0, num_quads * 4);
+
+//     glBindVertexArray(0);
+//     glDeleteBuffers(1, &vbo);
+//     glDeleteVertexArrays(1, &vao);
+// }
 
 // Global state
 bool gameOver = false;
@@ -476,9 +568,28 @@ int main() {
     if (!window) { glfwTerminate(); return -1; }
     // glfwSetWindowPos(window, 800, 800);
 
+    // Create ImGui window
+    GLFWwindow* imguiWindow = glfwCreateWindow(400, 600, "Debug Controls", NULL, NULL);
+    if (!imguiWindow) {
+        glfwDestroyWindow(imguiWindow);
+        glfwTerminate();
+        return -1;
+    }
+
+    
+    glfwSetWindowPos(window, 100, 100);
+    glfwSetWindowPos(imguiWindow, 1320, 100);
+
+
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
     glewInit();
+
+     IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(imguiWindow, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    ImGui::StyleColorsDark();
 
     glEnable(GL_DEPTH_TEST);
 
@@ -577,21 +688,37 @@ int main() {
 //     glfwPollEvents();
 // }
 
-    while (!glfwWindowShouldClose(window)) {
-
+    while (!glfwWindowShouldClose(window) && !glfwWindowShouldClose(imguiWindow)) {
+        glfwMakeContextCurrent(window);
+        process_input(window);
         if (gameOver) {
+            // Clear with dark red background
             glClearColor(0.1f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            
+            // Disable depth test and blending for text
+            glDisable(GL_DEPTH_TEST);
+            
+            // Get window size
             int width, height;
             glfwGetFramebufferSize(window, &width, &height);
+            
+            // Set text properties
             const char* msg = "GAME OVER";
-            int textPixelWidth = stb_easy_font_width((char*)msg);
-            int textPixelHeight = stb_easy_font_height((char*)msg);
-            float scale = 2.0f / height * 32.0f;
-            float x = -((float)textPixelWidth * scale) / 2.0f;
-            float y = -((float)textPixelHeight * scale) / 2.0f;
-            drawTextShader(textShader, msg, x, y, scale, glm::vec3(1,0,0));
+            float x = -0.3f;        // Center horizontally (-1 to 1)
+            float y = 0.0f;         // Center vertically (-1 to 1)
+            float scale = 0.008f;   // Make text larger (was 0.005f)
+            
+            // Draw text in white color
+            drawTextShader(textShader, msg, x, y, scale, glm::vec3(1.0f, 1.0f, 1.0f));
+            
+            // Re-enable depth test
+            glEnable(GL_DEPTH_TEST);
+            
             glfwSwapBuffers(window);
+            glfwPollEvents();
+            
+            // Check for restart
             if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
                 gameOver = false;
                 camPos = glm::vec3((1-7)*1.5f, 1.6f, (1-7)*1.5f);
@@ -599,14 +726,34 @@ int main() {
                 isJumping = false;
                 spawnEnemies();
             }
-            glfwPollEvents();
+            
             continue;
         }
         float currentFrame = (float)glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        process_input(window);
+        
+
+        // Update bullets
+        for (auto& b : bullets) {
+            if (!b.alive) continue;
+            b.pos += b.dir * b.speed * deltaTime;
+            // Remove bullet if too far
+            if (glm::length(b.pos - camPos) > 50.0f) b.alive = false;
+
+            // Check collision with enemies
+            for (auto& e : enemies) {
+                if (!e.alive || e.smashing) continue;
+                glm::vec3 enemyWorld = glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f);
+                float dist = glm::distance(glm::vec3(b.pos.x, 1.0f, b.pos.z), glm::vec3(enemyWorld.x, 1.0f, enemyWorld.z));
+                if (dist < 0.35f) { // Adjust threshold as needed
+                    e.smashing = true;
+                    e.smashTime = 0.0f;
+                    b.alive = false;
+                }
+            }
+        }
 
         // Gravity and jump
         const float gravity = -15.0f;
@@ -632,6 +779,14 @@ int main() {
         
         for (auto& e : enemies) {
             if (!e.alive) continue;
+            if (e.smashing) {
+                e.smashTime += deltaTime;
+                if (e.smashTime > 0.5f) { // Animation lasts 0.5s
+                    e.alive = false;
+                    e.smashing = false;
+                }
+                continue; // Don't move while smashing
+            }
             anyAlive = true;
             // Move in grid coordinates
             glm::vec3 next = glm::vec3(e.pos.x, e.pos.y, e.pos.z) + e.velocity * deltaTime;
@@ -697,10 +852,27 @@ int main() {
         // Draw enemies
         for (auto& e : enemies) {
             if (!e.alive) continue;
+            glm::vec3 color = glm::vec3(1,0,0);
+            float smashScaleY = 0.35f;
+            float smashAlpha = 1.0f;
+            if (e.smashing) {
+                float t = e.smashTime / 0.5f;
+                smashScaleY = 0.35f * (1.0f - t); // Shrink Y
+                smashAlpha = 1.0f - t;            // Fade out
+            }
             glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(e.pos.x * 1.5f - 10.5f, e.pos.y, e.pos.z * 1.5f - 10.5f)) *
-                            glm::scale(glm::mat4(1.0f), glm::vec3(0.35f, 0.35f, 0.35f)); // 4x smaller
+                            glm::scale(glm::mat4(1.0f), glm::vec3(0.35f, smashScaleY, 0.35f));
             glm::mat4 mvp = projection * view * model;
-            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,0,0), enemyTexture);
+            // If you want to pass alpha, modify your shader to accept it, or just use color for now
+            drawObject(cubeVAO, shader, 36, mvp, color, enemyTexture);
+        }
+
+        for (auto& b : bullets) {
+            if (!b.alive) continue;
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), b.pos) *
+                            glm::scale(glm::mat4(1.0f), glm::vec3(0.08f, 0.08f, 0.08f));
+            glm::mat4 mvp = projection * view * model;
+            drawObject(cubeVAO, shader, 36, mvp, glm::vec3(1,1,0));
         }
 
         // Draw a hand with gun (bigger gun quad, offset to lower right)
@@ -721,24 +893,57 @@ int main() {
         glDrawArrays(GL_LINES, 2, 2);
         glBindVertexArray(0);
 
-        // Disable depth writing so sky is always in the background
-glDepthMask(GL_FALSE);
+                // Disable depth writing so sky is always in the background
+        glDepthMask(GL_FALSE);
 
-// Center skybox at camera, scale large (e.g., 50 units)
-glm::mat4 skyModel = glm::translate(glm::mat4(1.0f), camPos) *
-                     glm::scale(glm::mat4(1.0f), glm::vec3(50.0f));
+        // Center skybox at camera, scale large (e.g., 50 units)
+        glm::mat4 skyModel = glm::translate(glm::mat4(1.0f), camPos) *
+                            glm::scale(glm::mat4(1.0f), glm::vec3(50.0f));
 
-// Remove translation from view matrix so skybox doesn't move with camera position
-glm::mat4 skyView = glm::mat4(glm::mat3(view));
-glm::mat4 skyMVP = projection * skyView * skyModel;
-glCullFace(GL_FRONT);
-// Draw with sky texture (use your cube VAO)
-drawObject(cubeVAO, shader, 36, skyMVP, glm::vec3(1.0f), skyTexture);
-glCullFace(GL_BACK);
-// Re-enable depth writing
-glDepthMask(GL_TRUE);
+        // Remove translation from view matrix so skybox doesn't move with camera position
+        glm::mat4 skyView = glm::mat4(glm::mat3(view));
+        glm::mat4 skyMVP = projection * skyView * skyModel;
+        glCullFace(GL_FRONT);
+        // Draw with sky texture (use your cube VAO)
+        drawObject(cubeVAO, shader, 36, skyMVP, glm::vec3(1.0f), skyTexture);
+        glCullFace(GL_BACK);
+        // Re-enable depth writing
+        glDepthMask(GL_TRUE);
+
+
+
+            if (params.showDebug) {
+                    
+                glfwMakeContextCurrent(imguiWindow);
+                // Before glfwSwapBuffers(window)...
+                ImGui_ImplOpenGL3_NewFrame();
+                ImGui_ImplGlfw_NewFrame();
+                ImGui::NewFrame();
+
+                // Make ImGui window fill the entire window
+                ImGui::SetNextWindowPos(ImVec2(0, 0));
+                ImGui::SetNextWindowSize(ImVec2(400, 600));
+                ImGui::Begin("Game Parameters", nullptr, 
+                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+        
+                    // ImGui::Begin("Game Parameters");
+                    ImGui::SliderFloat("Player Speed", &params.playerSpeed, 1.0f, 20.0f);
+                    ImGui::SliderFloat("Jump Strength", &params.jumpStrength, 1.0f, 15.0f);
+                    ImGui::SliderFloat("Enemy Speed", &params.enemySpeed, 0.5f, 10.0f);
+                    ImGui::SliderFloat("Bullet Speed", &params.bulletSpeed, 5.0f, 50.0f);
+                    ImGui::ColorEdit3("Enemy Color", &params.enemyColor.x);
+                    ImGui::SliderFloat("Wall Height", &params.wallHeight, 1.0f, 5.0f);
+                    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+                    ImGui::End();
+            }
+
+            ImGui::Render();
+            glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+        glfwSwapBuffers(imguiWindow);
         glfwPollEvents();
     }
 
@@ -754,6 +959,14 @@ glDepthMask(GL_TRUE);
     glDeleteVertexArrays(1, &crossVAO);
     glDeleteBuffers(1, &crossVBO);
     glDeleteProgram(shader);
+
+    ImGui_ImplOpenGL3_Shutdown();
+ImGui_ImplGlfw_Shutdown();
+ImGui::DestroyContext();
+
+
+glfwDestroyWindow(imguiWindow);
+    glfwDestroyWindow(window);
 
     glfwTerminate();
     return 0;
