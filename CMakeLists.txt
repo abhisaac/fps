@@ -26,7 +26,7 @@ link_directories(
 )
 elseif(APPLE)
  find_package(PkgConfig REQUIRED)
-    pkg_search_module(GLFW REQUIRED glfw)
+    pkg_search_module(GLFW REQUIRED glfw3)
     pkg_search_module(GLM REQUIRED glm)
     include_directories(
         ${GLFW_INCLUDE_DIRS}
