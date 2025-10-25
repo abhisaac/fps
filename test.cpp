@@ -1,5 +1,4 @@
-#define GLEW_STATIC
-#include <GL/glew.h>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <vector>
 #include <iostream>
@@ -102,8 +101,12 @@ int main() {
     GLFWwindow* window = glfwCreateWindow(800, 600, "drawTextShader Test", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
     glfwMakeContextCurrent(window);
-    glewExperimental = GL_TRUE;
-    glewInit();
+    
+    // Initialize GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD\n";
+        return -1;
+    }
 
     GLuint textShader = createTextShaderProgram();
 

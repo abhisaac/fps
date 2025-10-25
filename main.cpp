@@ -1,9 +1,16 @@
+/**
+ * TODO:
+ * split into multiple files
+ * move imgui stuff to another file
+ * wall jump
+ * better enemy AI
+ */
+
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-#define GLEW_STATIC
-#include <GL/glew.h>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -568,31 +575,36 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
     GLFWwindow* window = glfwCreateWindow(1200, 800, "Simple FPS Maze", NULL, NULL);
-    if (!window) { glfwTerminate(); return -1; }
+    if (!window) { std::cerr << "Failed to create window n"; glfwTerminate(); return -1; }
     // glfwSetWindowPos(window, 800, 800);
 
     // Create ImGui window
-    GLFWwindow* imguiWindow = glfwCreateWindow(400, 600, "Debug Controls", NULL, NULL);
-    if (!imguiWindow) {
-        glfwDestroyWindow(imguiWindow);
-        glfwTerminate();
-        return -1;
-    }
+    // GLFWwindow* imguiWindow = glfwCreateWindow(400, 600, "Debug Controls", NULL, NULL);
+    // if (!imguiWindow) {
+    //     glfwDestroyWindow(imguiWindow);
+    //     glfwTerminate();
+    //     return -1;
+    // }
 
     
-    glfwSetWindowPos(window, 100, 100);
-    glfwSetWindowPos(imguiWindow, 1320, 100);
+    // glfwSetWindowPos(window, 100, 100);
+    // glfwSetWindowPos(imguiWindow, 1320, 100);
 
 
     glfwMakeContextCurrent(window);
-    glewExperimental = GL_TRUE;
-    glewInit();
+   
+    // Initialize GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD\n";
+        return -1;
+    }
 
-     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui_ImplGlfw_InitForOpenGL(imguiWindow, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
-    ImGui::StyleColorsDark();
+
+    //  IMGUI_CHECKVERSION();
+    // ImGui::CreateContext();
+    // ImGui_ImplGlfw_InitForOpenGL(imguiWindow, true);
+    // ImGui_ImplOpenGL3_Init("#version 330");
+    // ImGui::StyleColorsDark();
 
     glEnable(GL_DEPTH_TEST);
 
@@ -691,7 +703,7 @@ int main() {
 //     glfwPollEvents();
 // }
 
-    while (!glfwWindowShouldClose(window) && !glfwWindowShouldClose(imguiWindow)) {
+    while (!glfwWindowShouldClose(window)) { //} && !glfwWindowShouldClose(imguiWindow)) {
         glfwMakeContextCurrent(window);
         process_input(window);
         if (gameOver) {
@@ -847,7 +859,7 @@ int main() {
         // Draw maze walls
         for (auto& pos : wallPositions) {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), pos) *
-                              glm::scale(glm::mat4(1.0f), glm::vec3(1.5f, 2.0f, 1.5f)); // 2.0f = taller, 1.5f = wider path
+                              glm::scale(glm::mat4(2.0f), glm::vec3(1.5f, 2.0f, 1.5f)); // 2.0f = taller, 1.5f = wider path
             glm::mat4 mvp = projection * view * model;
             drawObject(cubeVAO, shader, 36, mvp, glm::vec3(0.5f,0.5f,0.5f), wallTexture);
         }
@@ -915,38 +927,38 @@ int main() {
 
 
 
-            if (params.showDebug) {
+            // if (params.showDebug) {
                     
-                glfwMakeContextCurrent(imguiWindow);
-                // Before glfwSwapBuffers(window)...
-                ImGui_ImplOpenGL3_NewFrame();
-                ImGui_ImplGlfw_NewFrame();
-                ImGui::NewFrame();
+            //     glfwMakeContextCurrent(imguiWindow);
+            //     // Before glfwSwapBuffers(window)...
+            //     ImGui_ImplOpenGL3_NewFrame();
+            //     ImGui_ImplGlfw_NewFrame();
+            //     ImGui::NewFrame();
 
-                // Make ImGui window fill the entire window
-                ImGui::SetNextWindowPos(ImVec2(0, 0));
-                ImGui::SetNextWindowSize(ImVec2(400, 600));
-                ImGui::Begin("Game Parameters", nullptr, 
-                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+            //     // Make ImGui window fill the entire window
+            //     ImGui::SetNextWindowPos(ImVec2(0, 0));
+            //     ImGui::SetNextWindowSize(ImVec2(400, 600));
+            //     ImGui::Begin("Game Parameters", nullptr, 
+            //         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
         
-                    // ImGui::Begin("Game Parameters");
-                    ImGui::SliderFloat("Player Speed", &params.playerSpeed, 1.0f, 20.0f);
-                    ImGui::SliderFloat("Jump Strength", &params.jumpStrength, 1.0f, 15.0f);
-                    ImGui::SliderFloat("Enemy Speed", &params.enemySpeed, 0.5f, 10.0f);
-                    ImGui::SliderFloat("Bullet Speed", &params.bulletSpeed, 5.0f, 50.0f);
-                    ImGui::ColorEdit3("Enemy Color", &params.enemyColor.x);
-                    ImGui::SliderFloat("Wall Height", &params.wallHeight, 1.0f, 5.0f);
-                    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-                    ImGui::End();
-            }
+            //         // ImGui::Begin("Game Parameters");
+            //         ImGui::SliderFloat("Player Speed", &params.playerSpeed, 1.0f, 20.0f);
+            //         ImGui::SliderFloat("Jump Strength", &params.jumpStrength, 1.0f, 15.0f);
+            //         ImGui::SliderFloat("Enemy Speed", &params.enemySpeed, 0.5f, 10.0f);
+            //         ImGui::SliderFloat("Bullet Speed", &params.bulletSpeed, 5.0f, 50.0f);
+            //         ImGui::ColorEdit3("Enemy Color", &params.enemyColor.x);
+            //         ImGui::SliderFloat("Wall Height", &params.wallHeight, 1.0f, 5.0f);
+            //         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+            //         ImGui::End();
+            // }
 
-            ImGui::Render();
-            glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            // ImGui::Render();
+            // glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+            // glClear(GL_COLOR_BUFFER_BIT);
+            // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
-        glfwSwapBuffers(imguiWindow);
+        // glfwSwapBuffers(imguiWindow);
         glfwPollEvents();
     }
 
@@ -963,12 +975,12 @@ int main() {
     glDeleteBuffers(1, &crossVBO);
     glDeleteProgram(shader);
 
-    ImGui_ImplOpenGL3_Shutdown();
-ImGui_ImplGlfw_Shutdown();
-ImGui::DestroyContext();
+//     ImGui_ImplOpenGL3_Shutdown();
+// ImGui_ImplGlfw_Shutdown();
+// ImGui::DestroyContext();
 
 
-glfwDestroyWindow(imguiWindow);
+// glfwDestroyWindow(imguiWindow);
     glfwDestroyWindow(window);
 
     glfwTerminate();
