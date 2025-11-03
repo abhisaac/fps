@@ -119,6 +119,8 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 float camYVelocity = 0.0f;
 bool isJumping = false;
+// Player collision radius (XZ plane)
+const float PLAYER_RADIUS = 0.25f;
 
 struct Bullet {
     glm::vec3 pos;
@@ -299,6 +301,12 @@ GLuint createTextShaderProgram() {
     return prog;
 }
 
+// Framebuffer resize callback to handle HiDPI / scaling
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    // Make sure the viewport matches the new framebuffer size
+    glViewport(0, 0, width, height);
+}
+
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (firstMouse) {
@@ -343,10 +351,51 @@ void process_input(GLFWwindow* window) {
     // Prevent going below ground
     if (nextPos.y < 1.6f) nextPos.y = 1.6f;
 
-    // Maze collision (simple AABB vs wall cubes)
-    int px = int(std::round(nextPos.x/1.5f+7)), pz = int(std::round(nextPos.z/1.5f+7));
+    // Maze collision: perform cylinder (player) vs AABB (wall) collision on XZ plane
+    // Wall positions are centered at wallPositions with spacing ~1.5. Use a half-size matching wall drawn size.
+    float wallHalfSize = 0.75f; // half-extent of wall in X/Z (tweak if needed)
+    glm::vec3 resolvedPos = nextPos;
+    for (const auto &wp : wallPositions) {
+        // AABB min/max on XZ
+        float minX = wp.x - wallHalfSize;
+        float maxX = wp.x + wallHalfSize;
+        float minZ = wp.z - wallHalfSize;
+        float maxZ = wp.z + wallHalfSize;
+
+        // Closest point on AABB to player's XZ
+        float closestX = std::max(minX, std::min(resolvedPos.x, maxX));
+        float closestZ = std::max(minZ, std::min(resolvedPos.z, maxZ));
+
+        float dx = resolvedPos.x - closestX;
+        float dz = resolvedPos.z - closestZ;
+        float dist2 = dx*dx + dz*dz;
+
+        float minDist = PLAYER_RADIUS + 0.01f; // small epsilon
+        if (dist2 < minDist * minDist) {
+            float dist = std::sqrt(dist2);
+            // If we're exactly inside (dist==0), push out along camera forward direction
+            float nx = 0.0f, nz = 0.0f;
+            if (dist > 0.0001f) {
+                nx = dx / dist;
+                nz = dz / dist;
+            } else {
+                // fallback direction: from wall center to player previous position
+                float fx = resolvedPos.x - wp.x;
+                float fz = resolvedPos.z - wp.z;
+                float flen = std::sqrt(fx*fx + fz*fz);
+                if (flen > 0.0001f) { nx = fx / flen; nz = fz / flen; }
+                else { nx = 1.0f; nz = 0.0f; }
+            }
+            // push player out so distance equals minDist
+            resolvedPos.x = closestX + nx * minDist;
+            resolvedPos.z = closestZ + nz * minDist;
+        }
+    }
+
+    // Now check map bounds and cell openness before applying resolvedPos
+    int px = int(std::round(resolvedPos.x/1.5f+7)), pz = int(std::round(resolvedPos.z/1.5f+7));
     if (px>=0 && px<MAZE_W && pz>=0 && pz<MAZE_H && maze[pz][px]==0)
-        camPos = nextPos;
+        camPos = resolvedPos;
     
 
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !isJumping) {
@@ -599,6 +648,13 @@ int main() {
         return -1;
     }
 
+    // Ensure viewport matches actual framebuffer size (handles HiDPI / scaling)
+    int fbWidth, fbHeight;
+    glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+    glViewport(0, 0, fbWidth, fbHeight);
+    // Register callback so future window resizes update viewport too
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
 
     //  IMGUI_CHECKVERSION();
     // ImGui::CreateContext();
@@ -826,8 +882,10 @@ int main() {
         glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    // Ensure viewport uses the framebuffer size (important on HiDPI displays)
+    glViewport(0, 0, width, height);
         float aspect = (float)width / (float)height;
 
         glm::mat4 projection = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 100.0f);
